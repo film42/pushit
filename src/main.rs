@@ -143,6 +143,8 @@ async fn watch_for_kubernetes_deployment_changes(
         .await?
         .boxed();
 
+    println!("Watching for deployment changes...");
+
     while let Some(event) = stream.try_next().await? {
         match event {
             WatchEvent::Added(deployment) | WatchEvent::Modified(deployment) => {
@@ -214,9 +216,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize the kube controller
     // Infer the runtime environment and try to create a Kubernetes Client
     let client = Client::try_default().await?;
-    watch_for_kubernetes_deployment_changes(client, kube_events_sender)
-        .await
-        .expect("failed to watch");
+    // The api will cancel the watch after a while. Retry or abort.
+    loop {
+        watch_for_kubernetes_deployment_changes(client.clone(), kube_events_sender.clone())
+            .await
+            .expect("failed to watch");
+
+        println!("Watcher finished, restarting...");
+    }
 
     println!("Exiting...");
 
