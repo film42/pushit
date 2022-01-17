@@ -5,7 +5,7 @@ use openapi::apis::{configuration::Configuration, default_api as twilio_api};
 use std::env;
 use tide::prelude::*;
 use tide::{Body, Request, Response};
-use tokio::sync::mpsc::{error::TryRecvError, Receiver as MpscReceiver, Sender as MpscSender};
+use tokio::sync::mpsc::{Receiver as MpscReceiver, Sender as MpscSender};
 
 struct TwilioCaller {
     configuration: Configuration,
@@ -175,7 +175,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     app.at("/twilio/call/callback")
         .post(post_twilio_call_callback);
     app.at("/static/push-it.mp3").get(get_push_it);
-    let mut listener = app.bind("127.0.0.1:8080").await.expect("could not listen");
+    let mut listener = app.bind("0.0.0.0:8080").await.expect("could not listen");
     for info in listener.info().iter() {
         println!("Server listening on {}", info);
     }
