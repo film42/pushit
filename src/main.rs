@@ -218,14 +218,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::try_default().await?;
     // The api will cancel the watch after a while. Retry or abort.
     loop {
-        watch_for_kubernetes_deployment_changes(client.clone(), kube_events_sender.clone())
-            .await
-            .expect("failed to watch");
+        watch_for_kubernetes_deployment_changes(client.clone(), kube_events_sender.clone()).await?;
 
         println!("Watcher finished, restarting...");
     }
-
-    println!("Exiting...");
-
-    Ok(())
 }
