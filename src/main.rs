@@ -1,3 +1,6 @@
+use futures::{StreamExt, TryStreamExt};
+use k8s_openapi::api::apps::v1::Deployment;
+use kube::{api::ListParams, client::Client, core::WatchEvent, Api};
 use openapi::apis::{configuration::Configuration, default_api as twilio_api};
 use std::env;
 use tide::prelude::*;
@@ -24,8 +27,41 @@ async fn post_twilio_call_callback(mut _req: Request<()>) -> tide::Result {
         .build())
 }
 
+async fn watch_for_kubernetes_deployment_changes(
+    client: Client,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let deployment_api: Api<Deployment> = Api::all(client);
+    let params = ListParams::default();
+
+    let resource_version = deployment_api
+        .list(&params)
+        .await?
+        .metadata
+        .resource_version
+        .expect("invalid call");
+
+    let mut stream = deployment_api
+        .watch(&params, &resource_version)
+        .await?
+        .boxed();
+
+    while let Some(event) = stream.try_next().await? {
+        match event {
+            WatchEvent::Added(_) | WatchEvent::Modified(_) => {
+                // Push it!
+                // NOTE: This will send several notifications at once. We should probably debounce
+                // per application?
+                println!("Something happened!!!");
+            }
+            _ => { /* ignore */ }
+        }
+    }
+
+    Ok(())
+}
+
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = tide::new();
     app.at("/twilio/call/callback")
         .post(post_twilio_call_callback);
@@ -81,9 +117,18 @@ async fn main() {
     //        Err(error) => panic!("Something went wrong, {:?}", error),
     //    };
 
-    loop {
-        tokio::time::sleep(std::time::Duration::from_secs(1));
-    }
+    // Initialize the kube controller
+    // Infer the runtime environment and try to create a Kubernetes Client
+    let client = Client::try_default().await?;
+    watch_for_kubernetes_deployment_changes(client)
+        .await
+        .expect("failed to watch");
+
+    //    loop {
+    //        tokio::time::sleep(std::time::Duration::from_secs(1));
+    //    }
 
     println!("Hello, world!");
+
+    Ok(())
 }
