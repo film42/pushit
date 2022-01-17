@@ -145,7 +145,12 @@ async fn watch_for_kubernetes_deployment_changes(
 
     while let Some(event) = stream.try_next().await? {
         match event {
-            WatchEvent::Added(_) | WatchEvent::Modified(_) => {
+            WatchEvent::Added(deployment) | WatchEvent::Modified(deployment) => {
+                if let Some("pushit") = deployment.metadata.name.as_ref().map(|s| &s[..]) {
+                    println!("Detected a deployment change about myself (pushit), skipping...");
+                    continue;
+                }
+
                 // Push it!
                 println!("The kube api notified of a deployment event!!!");
                 sender.send(1337).await?;
