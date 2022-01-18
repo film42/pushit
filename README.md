@@ -21,6 +21,12 @@ The following enviornment variables are required to be set:
 6. `TO_NUMBER` (NOTE: This should be the twilio formatted number that you want to call when a deploy happens)
 7. `SONG_FILE_PATH` (NOTE: This should be relative, example: `static/my-song.mp3`)
 
+The twilio callback URL should be:
+
+```
+$APPLICATION_BASE_URL/static/song
+```
+
 # License
 
 MIT
