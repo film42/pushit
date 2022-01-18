@@ -217,34 +217,39 @@ async fn watch_for_kubernetes_deployment_changes(
                     continue;
                 }
 
-                // Skip this modification if the deployment revision is unchanged.
-                if let Some(key) = deployment.deployment_key() {
-                    if let Some(new_revision) = deployment.revision() {
-                        if !deployments.contains_key(&key) {
-                            println!(
-                                "Adding a new deployment to the deployments revision cache: {:?}",
-                                &key
-                            );
-                            deployments.insert(key.clone(), new_revision);
-                        } else {
-                            let old_revision = *deployments.get(&key).unwrap_or(&-1);
-                            if new_revision <= old_revision {
-                                println!("Skipping a deployment notification for {:?} because revision is unchanged.", &key);
-                                continue;
-                            } else {
-                                println!(
-                                    "Found an updated revision for {:?}, old_revision: {}, new_revision: {}",
-                                    &key,
-                                    old_revision,
-                                    new_revision
-                                );
-
-                                // Update the revision and continue with triggering.
-                                deployments.insert(key.clone(), new_revision);
-                            }
-                        }
+                // Detect a revision change, or unseen deployment, or skip the event.
+                match (deployment.deployment_key(), deployment.revision()) {
+                    (Some(key), Some(new_revision)) if !deployments.contains_key(&key) => {
+                        // Add the unseen deployment to cache, and send a notification.
+                        println!(
+                            "Adding a new deployment to the deployments revision cache: {:?}",
+                            &key
+                        );
+                        deployments.insert(key.clone(), new_revision);
                     }
-                }
+                    (Some(key), Some(new_revision)) => {
+                        // Skip this modification if the deployment revision is unchanged.
+                        let old_revision = *deployments.get(&key).unwrap_or(&-1);
+                        if new_revision <= old_revision {
+                            println!("Skipping a deployment notification for {:?} because revision is unchanged.", &key);
+                            continue;
+                        }
+
+                        println!(
+                            "Found an updated revision for {:?}, old_revision: {}, new_revision: {}",
+                            &key,
+                            old_revision,
+                            new_revision
+                        );
+
+                        // Update the revision and continue with triggering.
+                        deployments.insert(key.clone(), new_revision);
+                    }
+                    _ => {
+                        // Something is weird with the data, skip.
+                        continue;
+                    }
+                };
 
                 // Push it!
                 println!("The kube api notified of a deployment event!!!");
