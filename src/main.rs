@@ -1,7 +1,8 @@
 use futures::{StreamExt, TryStreamExt};
-use k8s_openapi::api::apps::v1::Deployment;
+use k8s_openapi::api::apps::v1::{Deployment, DeploymentStatus};
 use kube::{api::ListParams, client::Client, core::WatchEvent, Api};
 use openapi::apis::{configuration::Configuration, default_api as twilio_api};
+use std::collections::BTreeMap;
 use std::env;
 use tide::prelude::*;
 use tide::{Body, Request, Response};
@@ -125,12 +126,74 @@ async fn debounce_events_and_make_twilio_call(
     }
 }
 
+// This is a namespace/deployment lookup key.
+#[derive(Clone, PartialOrd, Ord, PartialEq, Eq, Debug)]
+struct DeploymentKey(String, String);
+
+trait DeploymentHelpers {
+    fn deployment_key(&self) -> Option<DeploymentKey>;
+    fn revision(&self) -> Option<i64>;
+}
+
+impl DeploymentHelpers for Deployment {
+    fn deployment_key(&self) -> Option<DeploymentKey> {
+        if self.metadata.name.is_none() || self.status.is_none() {
+            return None;
+        }
+        let default = "default".to_string();
+        let namespace = self.metadata.namespace.as_ref().unwrap_or_else(|| &default);
+        let name = self.metadata.name.as_ref().expect("checked");
+        Some(DeploymentKey(namespace.to_string(), name.to_string()))
+    }
+
+    fn revision(&self) -> Option<i64> {
+        if let Deployment {
+            status:
+                Some(DeploymentStatus {
+                    observed_generation: revision,
+                    ..
+                }),
+            ..
+        } = self
+        {
+            return *revision;
+        }
+
+        None
+    }
+}
+
+async fn get_deployment_revisions(
+    client: Client,
+) -> Result<BTreeMap<DeploymentKey, i64>, Box<dyn std::error::Error>> {
+    let deployment_api: Api<Deployment> = Api::all(client);
+    let params = ListParams::default();
+    Ok(deployment_api
+        .list(&params)
+        .await?
+        .items
+        .into_iter()
+        .map(|deployment| {
+            let key = deployment.deployment_key();
+            let revision = deployment.revision();
+            if key.is_none() || revision.is_none() {
+                return None;
+            }
+            Some((key.unwrap(), revision.unwrap()))
+        })
+        .filter(|key| key.is_some())
+        .map(|key| key.unwrap())
+        .collect())
+}
+
 async fn watch_for_kubernetes_deployment_changes(
     client: Client,
     sender: MpscSender<usize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let deployment_api: Api<Deployment> = Api::all(client);
+    let deployment_api: Api<Deployment> = Api::all(client.clone());
     let params = ListParams::default();
+
+    let mut deployments = get_deployment_revisions(client.clone()).await?;
 
     let resource_version = deployment_api
         .list(&params)
@@ -152,6 +215,35 @@ async fn watch_for_kubernetes_deployment_changes(
                 if let Some("pushit") = deployment.metadata.name.as_ref().map(|s| &s[..]) {
                     println!("Detected a deployment change about myself (pushit), skipping...");
                     continue;
+                }
+
+                // Skip this modification if the deployment revision is unchanged.
+                if let Some(key) = deployment.deployment_key() {
+                    if let Some(new_revision) = deployment.revision() {
+                        if !deployments.contains_key(&key) {
+                            println!(
+                                "Adding a new deployment to the deployments revision cache: {:?}",
+                                &key
+                            );
+                            deployments.insert(key.clone(), new_revision);
+                        }
+
+                        let old_revision = *deployments.get(&key).unwrap_or(&-1);
+                        if new_revision <= old_revision {
+                            println!("Skipping a deployment notification for {:?} because revision is unchanged.", &key);
+                            continue;
+                        } else {
+                            println!(
+                                "Found an updated revision for {:?}, old_revision: {}, new_revision: {}",
+                                &key,
+                                old_revision,
+                                new_revision
+                            );
+
+                            // Update the revision and continue with triggering.
+                            deployments.insert(key.clone(), new_revision);
+                        }
+                    }
                 }
 
                 // Push it!
