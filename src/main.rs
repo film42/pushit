@@ -226,22 +226,22 @@ async fn watch_for_kubernetes_deployment_changes(
                                 &key
                             );
                             deployments.insert(key.clone(), new_revision);
-                        }
-
-                        let old_revision = *deployments.get(&key).unwrap_or(&-1);
-                        if new_revision <= old_revision {
-                            println!("Skipping a deployment notification for {:?} because revision is unchanged.", &key);
-                            continue;
                         } else {
-                            println!(
-                                "Found an updated revision for {:?}, old_revision: {}, new_revision: {}",
-                                &key,
-                                old_revision,
-                                new_revision
-                            );
+                            let old_revision = *deployments.get(&key).unwrap_or(&-1);
+                            if new_revision <= old_revision {
+                                println!("Skipping a deployment notification for {:?} because revision is unchanged.", &key);
+                                continue;
+                            } else {
+                                println!(
+                                    "Found an updated revision for {:?}, old_revision: {}, new_revision: {}",
+                                    &key,
+                                    old_revision,
+                                    new_revision
+                                );
 
-                            // Update the revision and continue with triggering.
-                            deployments.insert(key.clone(), new_revision);
+                                // Update the revision and continue with triggering.
+                                deployments.insert(key.clone(), new_revision);
+                            }
                         }
                     }
                 }
