@@ -65,9 +65,9 @@ impl TwilioCaller {
     }
 }
 
-async fn get_push_it(mut _req: Request<WebContext>) -> tide::Result {
+async fn get_song(req: Request<WebContext>) -> tide::Result {
     Ok(Response::builder(200)
-        .body(Body::from_file("static/saltandpepper-pushit.mp3").await?)
+        .body(Body::from_file(&req.state().song_file_path).await?)
         .build())
 }
 
@@ -87,6 +87,7 @@ async fn post_twilio_call_callback(req: Request<WebContext>) -> tide::Result {
 #[derive(Clone)]
 struct WebContext {
     base_url: String,
+    song_file_path: String,
 }
 
 impl WebContext {
@@ -174,14 +175,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let twilio_number = env::var("TWILIO_PHONE_NUMBER").expect("Failed to parse 'from' number");
     let to_number = env::var("TO_NUMBER").expect("Failed to parse 'to' number");
     let base_url = env::var("APPLICATION_BASE_URL").expect("Failed to parse 'base url' value");
+    let song_file_path =
+        env::var("SONG_FILE_PATH").expect("Failed to parse 'song file path' value");
 
     // Configure the webserver that handles callbacks and static assets.
     let mut app = tide::with_state(WebContext {
         base_url: base_url.clone(),
+        song_file_path,
     });
     app.at("/twilio/call/callback")
         .post(post_twilio_call_callback);
-    app.at("/static/push-it.mp3").get(get_push_it);
+    app.at("/static/song").get(get_song);
     let mut listener = app.bind("0.0.0.0:8080").await.expect("could not listen");
     for info in listener.info().iter() {
         println!("Server listening on {}", info);
