@@ -93,7 +93,7 @@ struct WebContext {
 
 impl WebContext {
     fn payload_for_caller(&self) -> String {
-        let song_url = format!("{}/static/push-it.mp3", &self.base_url);
+        let song_url = format!("{}/static/song", &self.base_url);
         format!(
             r#"<?xml version="1.0" encoding="UTF-8"?><Response><Play>{}</Play></Response>"#,
             &song_url,

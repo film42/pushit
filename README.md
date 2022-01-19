@@ -24,7 +24,7 @@ The following enviornment variables are required to be set:
 The twilio callback URL should be:
 
 ```
-$APPLICATION_BASE_URL/static/song
+$APPLICATION_BASE_URL/twilio/call/callback
 ```
 
 # License
